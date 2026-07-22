@@ -118,7 +118,6 @@ def ensure_seed_default_bin(bin_name, warehouse, fieldname):
 		doc.bin_location = bin_name
 
 	doc.warehouse = warehouse
-	doc.common_bin = 1
 	doc.set(fieldname, 1)
 	doc.flags.ignore_permissions = True
 	doc.save()
@@ -129,7 +128,7 @@ def ensure_default_bin_custom_fields():
 		{
 			"fieldname": DEFAULT_WIP_BIN_FIELD,
 			"label": "Default WIP Bin",
-			"insert_after": "common_bin",
+			"insert_after": "warehouse",
 		},
 		{
 			"fieldname": DEFAULT_FG_BIN_FIELD,
