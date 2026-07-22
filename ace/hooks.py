@@ -2,7 +2,7 @@ app_name = "ace"
 app_title = "Ace"
 app_publisher = "Aceaviasion Solution Private Limited"
 app_description = "Ace customizations for ERPNext inventory and operations"
-app_email = "admin@example.com"
+app_email = "anuradha@fosserp.com"
 app_license = "mit"
 
 # Apps
@@ -255,4 +255,3 @@ app_license = "mit"
 # ------------
 # List of apps whose translatable strings should be excluded from this app's translations.
 # ignore_translatable_strings_from = []
-
