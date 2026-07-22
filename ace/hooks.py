@@ -146,6 +146,12 @@ app_license = "mit"
 # 	}
 # }
 
+doc_events = {
+	"Pick List": {
+		"validate": "ace.stock.pick_list.set_project_from_work_order",
+	}
+}
+
 # Scheduled Tasks
 # ---------------
 

@@ -6,3 +6,4 @@
 # Patches added in this section will be executed after doctypes are migrated
 ace.patches.v16_0.submit_dimension_stock_correction
 ace.patches.v16_0.make_job_card_inventory_dimensions_optional
+ace.patches.v16_0.enforce_pick_list_project_from_work_order
