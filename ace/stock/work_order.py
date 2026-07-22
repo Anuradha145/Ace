@@ -13,6 +13,8 @@ def update_material_transferred_for_work_order(work_order):
 	if not work_order:
 		return
 
+	recalculate_required_item_transferred_qty(work_order)
+
 	wo = frappe.db.get_value(
 		"Work Order",
 		work_order,
@@ -54,3 +56,8 @@ def update_material_transferred_for_work_order(work_order):
 		material_transferred_for_manufacturing,
 		update_modified=False,
 	)
+
+
+def recalculate_required_item_transferred_qty(work_order):
+	wo = frappe.get_doc("Work Order", work_order)
+	wo.update_transferred_qty_for_required_items()
