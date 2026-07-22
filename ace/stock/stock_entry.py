@@ -7,9 +7,12 @@ DEFAULT_FG_BIN_FIELD = "custom_is_default_fg_bin"
 DEFAULT_BIN_FIELDS = (DEFAULT_WIP_BIN_FIELD, DEFAULT_FG_BIN_FIELD)
 DEFAULT_BIN_CLIENT_SCRIPT = "ACE Default Bin in Stock Entry"
 OLD_WIP_BIN_CLIENT_SCRIPT = "ACE WIP Bin Default in Stock Entry"
+PROJECT_FIELD = "project_aa"
+TO_PROJECT_FIELD = "to_project_aa"
 
 
 def set_default_bin_location(doc, method=None):
+	set_project_dimensions_from_parent(doc)
 	default_bins = get_default_bin_locations()
 
 	for row in doc.get("items") or []:
@@ -23,6 +26,20 @@ def set_default_bin_location(doc, method=None):
 		source_bin = default_bins.get(row.get("s_warehouse"))
 		if source_bin:
 			row.set("bin_location", source_bin)
+
+
+def set_project_dimensions_from_parent(doc):
+	if not doc.get("project"):
+		return
+
+	for row in doc.get("items") or []:
+		row.set("project", doc.project)
+
+		if row.get("s_warehouse"):
+			row.set(PROJECT_FIELD, doc.project)
+
+		if row.get("t_warehouse"):
+			row.set(TO_PROJECT_FIELD, doc.project)
 
 
 def validate_default_bin_location(doc, method=None):
@@ -158,24 +175,48 @@ def ensure_default_bin_client_script():
 	script = """
 frappe.ui.form.on("Stock Entry", {
 	refresh(frm) {
+		set_project_dimensions(frm);
 		set_default_bin_locations(frm);
 	},
+	project(frm) {
+		set_project_dimensions(frm);
+	},
 	validate(frm) {
+		set_project_dimensions(frm);
 		set_default_bin_locations(frm);
 	},
 });
 
 frappe.ui.form.on("Stock Entry Detail", {
 	s_warehouse(frm) {
+		set_project_dimensions(frm);
 		set_default_bin_locations(frm);
 	},
 	t_warehouse(frm) {
+		set_project_dimensions(frm);
 		set_default_bin_locations(frm);
 	},
 	items_add(frm) {
+		set_project_dimensions(frm);
 		set_default_bin_locations(frm);
 	},
 });
+
+function set_project_dimensions(frm) {
+	if (!frm.doc.project) return;
+
+	(frm.doc.items || []).forEach((row) => {
+		frappe.model.set_value(row.doctype, row.name, "project", frm.doc.project);
+
+		if (row.s_warehouse) {
+			frappe.model.set_value(row.doctype, row.name, "project_aa", frm.doc.project);
+		}
+
+		if (row.t_warehouse) {
+			frappe.model.set_value(row.doctype, row.name, "to_project_aa", frm.doc.project);
+		}
+	});
+}
 
 function set_default_bin_locations(frm) {
 	frappe.call({

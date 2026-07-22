@@ -12,3 +12,5 @@ ace.patches.v16_0.create_wip_default_bin_and_correct_balances
 ace.patches.v16_0.create_fg_default_bin_and_correct_balances
 ace.patches.v16_0.configure_default_stock_bins
 ace.patches.v16_0.remove_common_bin_from_default_stock_bins
+ace.patches.v16_0.configure_stock_entry_project_dimensions
+ace.patches.v16_0.backfill_draft_stock_entry_project_dimensions
