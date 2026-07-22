@@ -7,3 +7,4 @@
 ace.patches.v16_0.submit_dimension_stock_correction
 ace.patches.v16_0.make_job_card_inventory_dimensions_optional
 ace.patches.v16_0.enforce_pick_list_project_from_work_order
+ace.patches.v16_0.recalculate_work_order_material_transferred_qty
