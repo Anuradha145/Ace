@@ -151,6 +151,7 @@ doc_events = {
 		"validate": "ace.stock.pick_list.set_project_from_work_order",
 	},
 	"Stock Entry": {
+		"validate": "ace.stock.stock_entry.set_wip_bin_location",
 		"on_submit": "ace.stock.work_order.update_work_order_transfer_from_stock_entry",
 		"on_cancel": "ace.stock.work_order.update_work_order_transfer_from_stock_entry",
 	},
