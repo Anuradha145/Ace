@@ -3,10 +3,10 @@ from frappe import _
 from frappe.utils import flt, nowdate, nowtime
 
 from ace.stock.stock_entry import (
-	WIP_BIN,
-	WIP_WAREHOUSE,
-	ensure_wip_bin_client_script,
-	ensure_wip_bin_location,
+	DEFAULT_WIP_BIN_FIELD,
+	ensure_default_bin_client_script,
+	ensure_seed_default_bin,
+	get_default_bin_for_field,
 )
 from ace.utils.dimension_stock_correction import (
 	BIN_FIELD,
@@ -24,14 +24,16 @@ from ace.utils.dimension_stock_correction import (
 
 
 PATCH_MARKER = "ace-wip-default-bin-correction-v1"
+INITIAL_WIP_BIN = "ACE - WIP"
+INITIAL_WIP_WAREHOUSE = "Work In Progress - ACE"
 
 
 def execute_wip_bin_correction():
 	lock = frappe.cache.lock("ace-wip-default-bin-correction", timeout=900)
 
 	with lock:
-		ensure_wip_bin_location()
-		ensure_wip_bin_client_script()
+		ensure_seed_default_bin(INITIAL_WIP_BIN, INITIAL_WIP_WAREHOUSE, DEFAULT_WIP_BIN_FIELD)
+		ensure_default_bin_client_script()
 
 		existing = get_existing_correction_entry()
 		if existing:
@@ -73,6 +75,10 @@ def submit_existing_or_report(stock_entry_name):
 
 
 def get_wip_blank_bin_balances():
+	default_bin = get_default_bin_for_field(DEFAULT_WIP_BIN_FIELD)
+	if not default_bin:
+		return []
+
 	query = """
 		select
 			item_code,
@@ -95,7 +101,7 @@ def get_wip_blank_bin_balances():
 		query,
 		{
 			"company": COMPANY,
-			"warehouse": WIP_WAREHOUSE,
+			"warehouse": default_bin.warehouse,
 			"min_qty": MIN_QTY,
 		},
 		as_dict=True,
@@ -104,11 +110,11 @@ def get_wip_blank_bin_balances():
 	return [
 		{
 			"item_code": row.item_code,
-			"warehouse": WIP_WAREHOUSE,
+			"warehouse": default_bin.warehouse,
 			"from_project": row.project_value or "",
 			"from_bin": "",
 			"to_project": row.project_value or "",
-			"to_bin": WIP_BIN,
+			"to_bin": default_bin.bin_location,
 			"qty": flt(row.qty, 6),
 		}
 		for row in rows
@@ -116,6 +122,8 @@ def get_wip_blank_bin_balances():
 
 
 def create_wip_bin_correction_entry(plan, item_details, skipped):
+	default_bin = get_default_bin_for_field(DEFAULT_WIP_BIN_FIELD)
+
 	stock_entry = frappe.new_doc("Stock Entry")
 	stock_entry.company = COMPANY
 	stock_entry.stock_entry_type = STOCK_ENTRY_TYPE
@@ -126,7 +134,7 @@ def create_wip_bin_correction_entry(plan, item_details, skipped):
 	stock_entry.remarks = (
 		PATCH_MARKER
 		+ "\nMoves existing Work In Progress stock from blank bin to "
-		+ WIP_BIN
+		+ (default_bin.bin_location if default_bin else "")
 		+ "."
 		+ "\nWarehouse and Project are unchanged on every row."
 		+ "\nBatch/serial skipped rows: "

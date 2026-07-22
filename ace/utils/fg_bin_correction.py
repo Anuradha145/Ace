@@ -3,10 +3,10 @@ from frappe import _
 from frappe.utils import flt, nowdate, nowtime
 
 from ace.stock.stock_entry import (
-	FG_BIN,
-	FG_WAREHOUSE,
+	DEFAULT_FG_BIN_FIELD,
 	ensure_default_bin_client_script,
-	ensure_fg_bin_location,
+	ensure_seed_default_bin,
+	get_default_bin_for_field,
 )
 from ace.utils.dimension_stock_correction import (
 	BIN_FIELD,
@@ -24,13 +24,15 @@ from ace.utils.dimension_stock_correction import (
 
 
 PATCH_MARKER = "ace-fg-default-bin-correction-v1"
+INITIAL_FG_BIN = "ACE - FG"
+INITIAL_FG_WAREHOUSE = "Finished Goods - ACE"
 
 
 def execute_fg_bin_correction():
 	lock = frappe.cache.lock("ace-fg-default-bin-correction", timeout=900)
 
 	with lock:
-		ensure_fg_bin_location()
+		ensure_seed_default_bin(INITIAL_FG_BIN, INITIAL_FG_WAREHOUSE, DEFAULT_FG_BIN_FIELD)
 		ensure_default_bin_client_script()
 
 		existing = get_existing_correction_entry()
@@ -73,6 +75,10 @@ def submit_existing_or_report(stock_entry_name):
 
 
 def get_fg_blank_bin_balances():
+	default_bin = get_default_bin_for_field(DEFAULT_FG_BIN_FIELD)
+	if not default_bin:
+		return []
+
 	query = """
 		select
 			item_code,
@@ -95,7 +101,7 @@ def get_fg_blank_bin_balances():
 		query,
 		{
 			"company": COMPANY,
-			"warehouse": FG_WAREHOUSE,
+			"warehouse": default_bin.warehouse,
 			"min_qty": MIN_QTY,
 		},
 		as_dict=True,
@@ -104,11 +110,11 @@ def get_fg_blank_bin_balances():
 	return [
 		{
 			"item_code": row.item_code,
-			"warehouse": FG_WAREHOUSE,
+			"warehouse": default_bin.warehouse,
 			"from_project": row.project_value or "",
 			"from_bin": "",
 			"to_project": row.project_value or "",
-			"to_bin": FG_BIN,
+			"to_bin": default_bin.bin_location,
 			"qty": flt(row.qty, 6),
 		}
 		for row in rows
@@ -116,6 +122,8 @@ def get_fg_blank_bin_balances():
 
 
 def create_fg_bin_correction_entry(plan, item_details, skipped):
+	default_bin = get_default_bin_for_field(DEFAULT_FG_BIN_FIELD)
+
 	stock_entry = frappe.new_doc("Stock Entry")
 	stock_entry.company = COMPANY
 	stock_entry.stock_entry_type = STOCK_ENTRY_TYPE
@@ -126,7 +134,7 @@ def create_fg_bin_correction_entry(plan, item_details, skipped):
 	stock_entry.remarks = (
 		PATCH_MARKER
 		+ "\nMoves existing Finished Goods stock from blank bin to "
-		+ FG_BIN
+		+ (default_bin.bin_location if default_bin else "")
 		+ "."
 		+ "\nWarehouse and Project are unchanged on every row."
 		+ "\nBatch/serial skipped rows: "
