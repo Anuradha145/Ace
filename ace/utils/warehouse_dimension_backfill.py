@@ -17,7 +17,6 @@ from ace.utils.dimension_stock_correction import (
 	submit_with_temporary_negative_stock,
 )
 
-
 PATCH_MARKER = "ace-wip-fg-dimension-backfill-v2"
 WAREHOUSE_DEFAULTS = (
 	("Work In Progress - ACE", "ACE - WIP", DEFAULT_WIP_BIN_FIELD),
@@ -170,9 +169,7 @@ def get_blank_project_allocations(item_code, warehouse, bin_location):
 
 def make_plan_row(balance, warehouse, default_bin, target_project, qty):
 	if not target_project:
-		frappe.throw(
-			_("Cannot determine a project for {0} in {1}.").format(balance.item_code, warehouse)
-		)
+		frappe.throw(_("Cannot determine a project for {0} in {1}.").format(balance.item_code, warehouse))
 
 	return {
 		"item_code": balance.item_code,

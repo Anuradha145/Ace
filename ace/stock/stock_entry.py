@@ -2,7 +2,6 @@ import frappe
 from frappe import _
 from frappe.utils import flt
 
-
 DEFAULT_WIP_BIN_FIELD = "custom_is_default_wip_bin"
 DEFAULT_FG_BIN_FIELD = "custom_is_default_fg_bin"
 DEFAULT_BIN_FIELDS = (DEFAULT_WIP_BIN_FIELD, DEFAULT_FG_BIN_FIELD)
@@ -62,9 +61,7 @@ def set_source_bin_from_available_stock(row):
 	if blank_qty + 1e-6 >= required_qty:
 		return
 
-	candidates = [
-		d for d in balances if d.bin_location and flt(d.qty) + 1e-6 >= required_qty
-	]
+	candidates = [d for d in balances if d.bin_location and flt(d.qty) + 1e-6 >= required_qty]
 	if len(candidates) == 1:
 		row.set("bin_location", candidates[0].bin_location)
 	elif len(candidates) > 1:

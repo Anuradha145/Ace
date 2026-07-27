@@ -1,6 +1,5 @@
 import frappe
 
-
 JOB_CARD_DIMENSION_FIELDS = (
 	"project_aa",
 	"bin_location",

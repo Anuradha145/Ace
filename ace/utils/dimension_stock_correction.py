@@ -4,7 +4,6 @@ import frappe
 from frappe import _
 from frappe.utils import add_to_date, flt, get_datetime, now_datetime
 
-
 COMPANY = "Aceaviasion Solution Private Limited"
 WAREHOUSES = []
 

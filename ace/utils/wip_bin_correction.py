@@ -22,7 +22,6 @@ from ace.utils.dimension_stock_correction import (
 	submit_with_temporary_negative_stock,
 )
 
-
 PATCH_MARKER = "ace-wip-default-bin-correction-v1"
 INITIAL_WIP_BIN = "ACE - WIP"
 INITIAL_WIP_WAREHOUSE = "Work In Progress - ACE"

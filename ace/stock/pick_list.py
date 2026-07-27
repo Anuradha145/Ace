@@ -2,7 +2,6 @@ import frappe
 from frappe import _
 from frappe.utils import flt
 
-
 MIN_QTY = 0.000001
 
 
@@ -12,7 +11,9 @@ def set_project_from_work_order(doc, method=None):
 
 	project = frappe.db.get_value("Work Order", doc.work_order, "project")
 	if not project:
-		frappe.throw(_("Please set Project in Work Order {0} before creating Pick List.").format(doc.work_order))
+		frappe.throw(
+			_("Please set Project in Work Order {0} before creating Pick List.").format(doc.work_order)
+		)
 
 	doc.custom_project = project
 
@@ -69,7 +70,7 @@ def allocate_work_order_stock_by_bin(doc, method=None):
 
 		if remaining > MIN_QTY:
 			shortages.append(
-				_('{0}: required {1}, allocated {2}, shortage {3}').format(
+				_("{0}: required {1}, allocated {2}, shortage {3}").format(
 					requirement.item_code,
 					frappe.format_value(requirement.qty, {"fieldtype": "Float"}),
 					frappe.format_value(allocated, {"fieldtype": "Float"}),
