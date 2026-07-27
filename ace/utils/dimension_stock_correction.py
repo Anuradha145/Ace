@@ -156,11 +156,11 @@ def get_batch_correction_posting_datetime(row):
 			sle.is_cancelled = 0
 			and sle.item_code = %(item_code)s
 			and sle.warehouse = %(warehouse)s
-			and coalesce(sle.{project_field}, '') = %(project)s
-			and coalesce(sle.{bin_field}, '') = %(bin)s
+			and coalesce(sle.project_aa, '') = %(project)s
+			and coalesce(sle.bin_location, '') = %(bin)s
 			and batch.batch_no = %(batch_no)s
 			and batch.qty < 0
-		""".format(project_field=PROJECT_FIELD, bin_field=BIN_FIELD),
+		""",
 		{
 			"item_code": row["item_code"],
 			"warehouse": row["warehouse"],
@@ -198,54 +198,50 @@ def submit_existing_or_report(stock_entry_name):
 
 
 def get_grouped_balances():
-	conditions = ["sle.is_cancelled = 0", "sle.company = %(company)s"]
-	params = {"company": COMPANY, "min_qty": MIN_QTY}
-
-	if WAREHOUSES:
-		conditions.append("sle.warehouse in %(warehouses)s")
-		params["warehouses"] = tuple(WAREHOUSES)
+	params = {
+		"company": COMPANY,
+		"min_qty": MIN_QTY,
+		"filter_warehouses": 1 if WAREHOUSES else 0,
+		"warehouses": tuple(WAREHOUSES) if WAREHOUSES else ("",),
+	}
 
 	non_batch_query = """
 		select
 			sle.item_code,
 			sle.warehouse,
-			coalesce(sle.{project_field}, '') as project_value,
-			coalesce(sle.{bin_field}, '') as bin_value,
+			coalesce(sle.project_aa, '') as project_value,
+			coalesce(sle.bin_location, '') as bin_value,
 			'' as batch_no,
 			sum(sle.actual_qty) as qty
 		from `tabStock Ledger Entry` sle
 		inner join `tabItem` item on item.name = sle.item_code and item.has_batch_no = 0
-		where {conditions}
+		where sle.is_cancelled = 0
+			and sle.company = %(company)s
+			and (%(filter_warehouses)s = 0 or sle.warehouse in %(warehouses)s)
 		group by sle.item_code, sle.warehouse,
-			coalesce(sle.{project_field}, ''), coalesce(sle.{bin_field}, '')
+			coalesce(sle.project_aa, ''), coalesce(sle.bin_location, '')
 		having abs(sum(sle.actual_qty)) > %(min_qty)s
-	""".format(
-		project_field=PROJECT_FIELD,
-		bin_field=BIN_FIELD,
-		conditions=" and ".join(conditions),
-	)
+	"""
 
 	batch_query = """
 		select
 			sle.item_code,
 			sle.warehouse,
-			coalesce(sle.{project_field}, '') as project_value,
-			coalesce(sle.{bin_field}, '') as bin_value,
+			coalesce(sle.project_aa, '') as project_value,
+			coalesce(sle.bin_location, '') as bin_value,
 			batch.batch_no,
 			sum(batch.qty) as qty
 		from `tabStock Ledger Entry` sle
 		inner join `tabItem` item on item.name = sle.item_code and item.has_batch_no = 1
 		inner join `tabSerial and Batch Entry` batch
 			on batch.parent = sle.serial_and_batch_bundle and batch.batch_no is not null
-		where {conditions}
+		where sle.is_cancelled = 0
+			and sle.company = %(company)s
+			and (%(filter_warehouses)s = 0 or sle.warehouse in %(warehouses)s)
 		group by sle.item_code, sle.warehouse,
-			coalesce(sle.{project_field}, ''), coalesce(sle.{bin_field}, ''), batch.batch_no
+			coalesce(sle.project_aa, ''), coalesce(sle.bin_location, ''), batch.batch_no
 		having abs(sum(batch.qty)) > %(min_qty)s
-	""".format(
-		project_field=PROJECT_FIELD,
-		bin_field=BIN_FIELD,
-		conditions=" and ".join(conditions),
-	)
+	"""
 
 	return frappe.db.sql(non_batch_query, params, as_dict=True) + frappe.db.sql(
 		batch_query, params, as_dict=True
@@ -374,7 +370,7 @@ def filter_unsupported_items(plan, item_details):
 
 	for row in plan:
 		item = item_details.get(row["item_code"])
-		reason = ""
+		reason = None
 
 		if not item:
 			reason = "Item not found"
@@ -497,8 +493,6 @@ def submit_with_temporary_negative_stock(doc):
 		if doc.docstatus != 1:
 			frappe.throw(_("Stock Entry {0} was not submitted.").format(doc.name))
 
-		frappe.db.commit()
-
 		return {
 			"status": "submitted",
 			"stock_entry": doc.name,
@@ -522,4 +516,3 @@ def submit_with_temporary_negative_stock(doc):
 			original_allow_negative_stock_for_batch,
 		)
 		frappe.clear_cache(doctype="Stock Settings")
-		frappe.db.commit()

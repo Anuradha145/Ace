@@ -81,20 +81,17 @@ def get_wip_blank_bin_balances():
 	query = """
 		select
 			item_code,
-			coalesce({project_field}, '') as project_value,
+			coalesce(project_aa, '') as project_value,
 			sum(actual_qty) as qty
 		from `tabStock Ledger Entry`
 		where
 			is_cancelled = 0
 			and company = %(company)s
 			and warehouse = %(warehouse)s
-			and coalesce({bin_field}, '') = ''
-		group by item_code, coalesce({project_field}, '')
+			and coalesce(bin_location, '') = ''
+		group by item_code, coalesce(project_aa, '')
 		having sum(actual_qty) > %(min_qty)s
-	""".format(
-		project_field=PROJECT_FIELD,
-		bin_field=BIN_FIELD,
-	)
+	"""
 
 	rows = frappe.db.sql(
 		query,

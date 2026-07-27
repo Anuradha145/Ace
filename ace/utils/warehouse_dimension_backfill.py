@@ -78,12 +78,16 @@ def execute_warehouse_dimension_backfill():
 
 def normalize_blank_stock_dimensions():
 	"""Treat legacy empty strings as the NULL value used by current stock posting."""
-	for fieldname in ("project_aa", "bin_location"):
-		frappe.db.sql(
-			f"""update `tabStock Ledger Entry`
-			set `{fieldname}` = null
-			where `{fieldname}` = ''"""
-		)
+	frappe.db.sql(
+		"""update `tabStock Ledger Entry`
+		set project_aa = null
+		where project_aa = ''"""
+	)
+	frappe.db.sql(
+		"""update `tabStock Ledger Entry`
+		set bin_location = null
+		where bin_location = ''"""
+	)
 
 
 def get_dimension_backfill_plan(warehouse, default_bin):

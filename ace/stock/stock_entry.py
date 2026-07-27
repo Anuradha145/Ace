@@ -81,7 +81,12 @@ def set_source_bin_from_available_stock(row):
 
 
 @frappe.whitelist()
-def get_source_bin_balances(item_code, warehouse, project=None, batch_no=None):
+def get_source_bin_balances(
+	item_code: str,
+	warehouse: str,
+	project: str | None = None,
+	batch_no: str | None = None,
+):
 	return frappe.db.sql(
 		"""
 		select coalesce(bin_location, '') as bin_location, sum(actual_qty) as qty
