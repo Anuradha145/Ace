@@ -1,5 +1,6 @@
 import frappe
 from frappe import _
+from frappe.utils import flt
 
 
 DEFAULT_WIP_BIN_FIELD = "custom_is_default_wip_bin"
@@ -23,23 +24,116 @@ def set_default_bin_location(doc, method=None):
 		if target_bin:
 			row.set("to_bin_location", target_bin)
 
-		source_bin = default_bins.get(row.get("s_warehouse"))
-		if source_bin:
-			row.set("bin_location", source_bin)
+		set_source_bin_from_available_stock(row)
+
+	validate_transfer_bins(doc)
+
+
+def validate_transfer_bins(doc):
+	for row in doc.get("items") or []:
+		if not row.get("s_warehouse") or not row.get("t_warehouse"):
+			continue
+
+		if not row.get("to_bin_location"):
+			frappe.throw(
+				_("Row {0}: Target Bin Location is required for a stock transfer into {1}.").format(
+					row.idx, row.t_warehouse
+				)
+			)
+
+
+def set_source_bin_from_available_stock(row):
+	"""Use a bin only when the source balance really belongs to that bin.
+
+	Legacy stock can validly live in the blank-bin bucket. Keeping that source blank
+	prevents a return transfer from creating a negative balance in an invented bin.
+	"""
+	if row.get("bin_location") or not row.get("s_warehouse") or not row.get("item_code"):
+		return
+
+	balances = get_source_bin_balances(
+		row.item_code,
+		row.s_warehouse,
+		row.get(PROJECT_FIELD),
+		row.get("batch_no"),
+	)
+	required_qty = abs(flt(row.get("transfer_qty") or row.get("qty")))
+	blank_qty = next((flt(d.qty) for d in balances if not d.bin_location), 0)
+	if blank_qty + 1e-6 >= required_qty:
+		return
+
+	candidates = [
+		d for d in balances if d.bin_location and flt(d.qty) + 1e-6 >= required_qty
+	]
+	if len(candidates) == 1:
+		row.set("bin_location", candidates[0].bin_location)
+	elif len(candidates) > 1:
+		frappe.throw(
+			_(
+				"Row {0}: Stock is available in multiple source bins for {1}. "
+				"Select the Source Bin Location explicitly."
+			).format(row.idx, row.item_code)
+		)
+	elif any(d.bin_location for d in balances):
+		frappe.throw(
+			_(
+				"Row {0}: No single source bin has enough stock for {1}. "
+				"Split the quantity across rows and select the correct Source Bin Location on each row."
+			).format(row.idx, row.item_code)
+		)
+
+
+@frappe.whitelist()
+def get_source_bin_balances(item_code, warehouse, project=None, batch_no=None):
+	return frappe.db.sql(
+		"""
+		select coalesce(bin_location, '') as bin_location, sum(actual_qty) as qty
+		from `tabStock Ledger Entry`
+		where is_cancelled = 0
+			and item_code = %(item_code)s
+			and warehouse = %(warehouse)s
+			and coalesce(project_aa, '') = coalesce(%(project)s, '')
+			and (%(batch_no)s is null or %(batch_no)s = '' or batch_no = %(batch_no)s)
+		group by coalesce(bin_location, '')
+		having sum(actual_qty) > 0.000001
+		""",
+		{
+			"item_code": item_code,
+			"warehouse": warehouse,
+			"project": project,
+			"batch_no": batch_no,
+		},
+		as_dict=True,
+	)
 
 
 def set_project_dimensions_from_parent(doc):
-	if not doc.get("project"):
+	parent_project = get_parent_project(doc)
+	if not parent_project and not any(row.get(PROJECT_FIELD) for row in doc.get("items") or []):
 		return
 
 	for row in doc.get("items") or []:
-		row.set("project", doc.project)
+		source_project = row.get(PROJECT_FIELD) or parent_project
+		target_project = parent_project or source_project
 
-		if row.get("s_warehouse"):
-			row.set(PROJECT_FIELD, doc.project)
+		if parent_project:
+			row.set("project", parent_project)
 
-		if row.get("t_warehouse"):
-			row.set(TO_PROJECT_FIELD, doc.project)
+		if row.get("s_warehouse") and source_project:
+			row.set(PROJECT_FIELD, source_project)
+
+		if row.get("t_warehouse") and target_project:
+			row.set(TO_PROJECT_FIELD, target_project)
+
+
+def get_parent_project(doc):
+	if doc.get("project"):
+		return doc.project
+
+	if doc.get("work_order"):
+		return frappe.db.get_value("Work Order", doc.work_order, "project")
+
+	return None
 
 
 def validate_default_bin_location(doc, method=None):
@@ -203,17 +297,20 @@ frappe.ui.form.on("Stock Entry Detail", {
 });
 
 function set_project_dimensions(frm) {
-	if (!frm.doc.project) return;
-
 	(frm.doc.items || []).forEach((row) => {
-		frappe.model.set_value(row.doctype, row.name, "project", frm.doc.project);
+		const source_project = row.project_aa || frm.doc.project;
+		const target_project = frm.doc.project || source_project;
 
-		if (row.s_warehouse) {
-			frappe.model.set_value(row.doctype, row.name, "project_aa", frm.doc.project);
+		if (frm.doc.project) {
+			frappe.model.set_value(row.doctype, row.name, "project", frm.doc.project);
 		}
 
-		if (row.t_warehouse) {
-			frappe.model.set_value(row.doctype, row.name, "to_project_aa", frm.doc.project);
+		if (row.s_warehouse && source_project) {
+			frappe.model.set_value(row.doctype, row.name, "project_aa", source_project);
+		}
+
+		if (row.t_warehouse && target_project) {
+			frappe.model.set_value(row.doctype, row.name, "to_project_aa", target_project);
 		}
 	});
 }
@@ -236,14 +333,6 @@ function set_default_bin_locations(frm) {
 					);
 				}
 
-				if (default_bins[row.s_warehouse]) {
-					frappe.model.set_value(
-						row.doctype,
-						row.name,
-						"bin_location",
-						default_bins[row.s_warehouse]
-					);
-				}
 			});
 		},
 	});

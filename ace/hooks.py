@@ -152,6 +152,8 @@ doc_events = {
 	},
 	"Pick List": {
 		"validate": "ace.stock.pick_list.set_project_from_work_order",
+		"before_save": "ace.stock.pick_list.allocate_work_order_stock_by_bin",
+		"before_submit": "ace.stock.pick_list.allocate_work_order_stock_by_bin",
 	},
 	"Stock Entry": {
 		"validate": "ace.stock.stock_entry.set_default_bin_location",
