@@ -431,6 +431,11 @@ def create_stock_entry(plan, item_details, skipped, marker=PATCH_MARKER, posting
 			child.batch_no = row["batch_no"]
 
 	stock_entry.flags.ignore_permissions = True
+	# Legacy stock can exist in an empty dimension bucket even when that
+	# dimension is mandatory now. The correction must preserve that empty
+	# source value so it consumes the legacy bucket instead of creating a new
+	# negative balance under the target dimension.
+	stock_entry.flags.ignore_mandatory = True
 	stock_entry.insert()
 	return stock_entry
 
