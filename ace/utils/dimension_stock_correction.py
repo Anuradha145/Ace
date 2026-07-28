@@ -389,6 +389,10 @@ def filter_unsupported_items(plan, item_details):
 	return supported, skipped
 
 
+def skip_inventory_dimension_mandatory_validation():
+	"""Allow correction rows to consume legacy empty dimension buckets."""
+
+
 def create_stock_entry(plan, item_details, skipped, marker=PATCH_MARKER, posting_datetime=None):
 	stock_entry = frappe.new_doc("Stock Entry")
 	stock_entry.company = COMPANY
@@ -436,6 +440,7 @@ def create_stock_entry(plan, item_details, skipped, marker=PATCH_MARKER, posting
 	# source value so it consumes the legacy bucket instead of creating a new
 	# negative balance under the target dimension.
 	stock_entry.flags.ignore_mandatory = True
+	stock_entry.validate_inventory_dimension_mandatory = skip_inventory_dimension_mandatory_validation
 	stock_entry.insert()
 	return stock_entry
 
