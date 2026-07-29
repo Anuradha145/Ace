@@ -2,12 +2,14 @@ from types import SimpleNamespace
 from unittest import TestCase
 from unittest.mock import patch
 
+from ace.stock.stock_entry import set_default_bin_location
 from ace.utils.dimension_stock_correction import (
 	BIN_FIELD,
 	PROJECT_FIELD,
 	TO_BIN_FIELD,
 	TO_PROJECT_FIELD,
 	create_stock_entry,
+	get_plan_patch_marker,
 	remove_noop_document_rows,
 	submit_plan,
 	validate_transfer_plan,
@@ -22,10 +24,15 @@ class FakeRow(dict):
 		self[key] = value
 
 
+class FakeFlags(SimpleNamespace):
+	def get(self, key, default=None):
+		return getattr(self, key, default)
+
+
 class FakeStockEntry:
 	def __init__(self, mutate_dimensions_on_insert=False):
 		self.items = []
-		self.flags = SimpleNamespace()
+		self.flags = FakeFlags()
 		self.name = "MAT-STE-TEST"
 		self.mutate_dimensions_on_insert = mutate_dimensions_on_insert
 
@@ -102,6 +109,27 @@ class TestDimensionStockCorrection(TestCase):
 		self.assertEqual(len(removed), 1)
 		self.assertNotIn(noop, doc.items)
 		self.assertIn(actionable, doc.items)
+
+	def test_plan_marker_changes_with_remaining_plan(self):
+		first = get_plan_patch_marker("marker", [make_plan("PROJ-1", "BIN-1", "PROJ-2", "BIN-2")])
+		second = get_plan_patch_marker("marker", [make_plan("PROJ-1", "BIN-1", "PROJ-3", "BIN-2")])
+
+		self.assertNotEqual(first, second)
+		self.assertEqual(
+			first, get_plan_patch_marker("marker", [make_plan("PROJ-1", "BIN-1", "PROJ-2", "BIN-2")])
+		)
+
+	@patch("ace.stock.stock_entry.set_project_dimensions_from_parent")
+	@patch("ace.stock.stock_entry.get_default_bin_locations")
+	def test_correction_flag_skips_stock_entry_dimension_defaults(self, get_defaults, set_projects):
+		doc = FakeStockEntry()
+		doc.flags.ace_preserve_inventory_dimensions = True
+		doc.append("items", make_document_row("PROJ-1", "BIN-1", "PROJ-2", "BIN-2"))
+
+		set_default_bin_location(doc)
+
+		set_projects.assert_not_called()
+		get_defaults.assert_not_called()
 
 	@patch("ace.utils.dimension_stock_correction.create_stock_entry")
 	@patch("ace.utils.dimension_stock_correction.submit_existing_or_report")
