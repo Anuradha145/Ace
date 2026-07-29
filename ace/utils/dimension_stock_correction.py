@@ -127,6 +127,7 @@ def submit_plan(plan, item_details, skipped, marker, posting_datetime=None):
 			"skipped_identical_rows": identical_plan_rows,
 		}
 
+	marker = get_plan_patch_marker(marker, plan)
 	existing = get_existing_correction_entry(marker)
 	if existing:
 		return submit_existing_or_report(existing)
@@ -154,6 +155,26 @@ def submit_plan(plan, item_details, skipped, marker, posting_datetime=None):
 
 	validate_dimension_only_entry(stock_entry)
 	return submit_with_temporary_negative_stock(stock_entry)
+
+
+def get_plan_patch_marker(marker, plan):
+	identity = "\n".join(
+		"|".join(
+			str(row.get(field) or "")
+			for field in (
+				"item_code",
+				"warehouse",
+				"from_project",
+				"from_bin",
+				"to_project",
+				"to_bin",
+				"batch_no",
+				"qty",
+			)
+		)
+		for row in plan
+	)
+	return marker + "-plan-" + hashlib.sha1(identity.encode()).hexdigest()[:12]
 
 
 def validate_transfer_plan(plan):
@@ -244,6 +265,7 @@ def get_batch_correction_posting_datetime(row):
 
 def submit_existing_or_report(stock_entry_name):
 	doc = frappe.get_doc("Stock Entry", stock_entry_name)
+	doc.flags.ace_preserve_inventory_dimensions = True
 
 	if doc.docstatus == 1:
 		return {
@@ -520,6 +542,7 @@ def create_stock_entry(plan, item_details, skipped, marker=PATCH_MARKER, posting
 			child.batch_no = row["batch_no"]
 
 	stock_entry.flags.ignore_permissions = True
+	stock_entry.flags.ace_preserve_inventory_dimensions = True
 	# Legacy stock can exist in an empty dimension bucket even when that
 	# dimension is mandatory now. The correction must preserve that empty
 	# source value so it consumes the legacy bucket instead of creating a new
@@ -583,6 +606,7 @@ def restore_inserted_dimensions(stock_entry, expected_dimensions):
 	stock_entry.reload()
 	stock_entry.flags.ignore_permissions = True
 	stock_entry.flags.ignore_mandatory = True
+	stock_entry.flags.ace_preserve_inventory_dimensions = True
 	stock_entry.validate_inventory_dimension_mandatory = skip_inventory_dimension_mandatory_validation
 	for index, child in enumerate(stock_entry.items):
 		expected = expected_dimensions[index]
@@ -686,6 +710,7 @@ def prepare_correction_rows(doc):
 
 def submit_with_temporary_negative_stock(doc):
 	prepare_correction_rows(doc)
+	doc.flags.ace_preserve_inventory_dimensions = True
 
 	stock_settings = frappe.get_single("Stock Settings")
 	original_allow_negative_stock = stock_settings.allow_negative_stock or 0

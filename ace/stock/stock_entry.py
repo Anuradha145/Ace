@@ -12,6 +12,9 @@ TO_PROJECT_FIELD = "to_project_aa"
 
 
 def set_default_bin_location(doc, method=None):
+	if doc.flags.get("ace_preserve_inventory_dimensions"):
+		return
+
 	set_project_dimensions_from_parent(doc)
 	default_bins = get_default_bin_locations()
 
