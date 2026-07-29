@@ -114,6 +114,19 @@ def get_existing_correction_entry(marker=PATCH_MARKER):
 
 
 def submit_plan(plan, item_details, skipped, marker, posting_datetime=None):
+	plan, identical_plan_rows = validate_transfer_plan(plan)
+	if identical_plan_rows:
+		frappe.logger("ace").warning(
+			"Skipped identical transfer-plan rows: %s",
+			frappe.as_json(identical_plan_rows),
+		)
+
+	if not plan:
+		return {
+			"status": "no_actionable_rows",
+			"skipped_identical_rows": identical_plan_rows,
+		}
+
 	existing = get_existing_correction_entry(marker)
 	if existing:
 		return submit_existing_or_report(existing)
@@ -125,8 +138,57 @@ def submit_plan(plan, item_details, skipped, marker, posting_datetime=None):
 		marker=marker,
 		posting_datetime=posting_datetime,
 	)
+	removed_noop_rows = remove_noop_document_rows(stock_entry)
+	if removed_noop_rows:
+		frappe.logger("ace").warning(
+			"Removed no-op Stock Entry rows: %s",
+			frappe.as_json(removed_noop_rows),
+		)
+
+	if not stock_entry.items:
+		stock_entry.delete(ignore_permissions=True)
+		return {
+			"status": "no_actionable_rows",
+			"removed_noop_rows": removed_noop_rows,
+		}
+
 	validate_dimension_only_entry(stock_entry)
 	return submit_with_temporary_negative_stock(stock_entry)
+
+
+def validate_transfer_plan(plan):
+	valid_rows = []
+	skipped_rows = []
+
+	for index, row in enumerate(plan, start=1):
+		source = (
+			clean_dimension(row.get("from_project")),
+			clean_dimension(row.get("from_bin")),
+		)
+		target = (
+			clean_dimension(row.get("to_project")),
+			clean_dimension(row.get("to_bin")),
+		)
+
+		if source == target:
+			skipped_rows.append(
+				{
+					"plan_row": index,
+					"item_code": row.get("item_code"),
+					"warehouse": row.get("warehouse"),
+					"batch_no": row.get("batch_no"),
+					"source_project": source[0],
+					"source_bin": source[1],
+					"target_project": target[0],
+					"target_bin": target[1],
+					"reason": "Source and target dimensions are identical",
+				}
+			)
+			continue
+
+		valid_rows.append(row)
+
+	return valid_rows, skipped_rows
 
 
 def get_batch_patch_marker(row):
@@ -191,6 +253,20 @@ def submit_existing_or_report(stock_entry_name):
 
 	if doc.docstatus != 0:
 		frappe.throw(_("Stock Entry {0} must be Draft or Submitted.").format(doc.name))
+
+	removed_noop_rows = remove_noop_document_rows(doc)
+	if removed_noop_rows:
+		frappe.logger("ace").warning(
+			"Removed no-op Stock Entry rows: %s",
+			frappe.as_json(removed_noop_rows),
+		)
+
+	if not doc.items:
+		doc.delete(ignore_permissions=True)
+		return {
+			"status": "no_actionable_rows",
+			"removed_noop_rows": removed_noop_rows,
+		}
 
 	validate_dimension_only_entry(doc)
 	prepare_correction_rows(doc)
@@ -410,7 +486,16 @@ def create_stock_entry(plan, item_details, skipped, marker=PATCH_MARKER, posting
 		+ str(len(skipped))
 	)
 
+	expected_dimensions = []
 	for row in plan:
+		expected_dimensions.append(
+			{
+				"from_project": clean_dimension(row.get("from_project")),
+				"from_bin": clean_dimension(row.get("from_bin")),
+				"to_project": clean_dimension(row.get("to_project")),
+				"to_bin": clean_dimension(row.get("to_bin")),
+			}
+		)
 		item = item_details[row["item_code"]]
 		child = stock_entry.append(
 			"items",
@@ -442,7 +527,77 @@ def create_stock_entry(plan, item_details, skipped, marker=PATCH_MARKER, posting
 	stock_entry.flags.ignore_mandatory = True
 	stock_entry.validate_inventory_dimension_mandatory = skip_inventory_dimension_mandatory_validation
 	stock_entry.insert()
+	restore_inserted_dimensions(stock_entry, expected_dimensions)
+	validate_dimension_only_entry(stock_entry)
 	return stock_entry
+
+
+def get_row_dimensions(row):
+	return {
+		"from_project": clean_dimension(row.get(PROJECT_FIELD)),
+		"from_bin": clean_dimension(row.get(BIN_FIELD)),
+		"to_project": clean_dimension(row.get(TO_PROJECT_FIELD)),
+		"to_bin": clean_dimension(row.get(TO_BIN_FIELD)),
+	}
+
+
+def restore_inserted_dimensions(stock_entry, expected_dimensions):
+	if len(stock_entry.items) != len(expected_dimensions):
+		frappe.throw(
+			_("Stock Entry {0}: Expected {1} rows after insert, found {2}.").format(
+				stock_entry.name,
+				len(expected_dimensions),
+				len(stock_entry.items),
+			)
+		)
+
+	for index, child in enumerate(stock_entry.items):
+		expected = expected_dimensions[index]
+		actual = get_row_dimensions(child)
+		if expected != actual:
+			frappe.logger("ace").warning(
+				"Stock Entry dimension fields changed during insert. Row=%s Item=%s Expected=%s Actual=%s",
+				child.idx,
+				child.item_code,
+				expected,
+				actual,
+			)
+
+		child.set(PROJECT_FIELD, expected["from_project"] or None)
+		child.set(BIN_FIELD, expected["from_bin"] or None)
+		child.set(TO_PROJECT_FIELD, expected["to_project"] or None)
+		child.set(TO_BIN_FIELD, expected["to_bin"] or None)
+
+		frappe.db.set_value(
+			"Stock Entry Detail",
+			child.name,
+			{
+				PROJECT_FIELD: expected["from_project"] or None,
+				BIN_FIELD: expected["from_bin"] or None,
+				TO_PROJECT_FIELD: expected["to_project"] or None,
+				TO_BIN_FIELD: expected["to_bin"] or None,
+			},
+			update_modified=False,
+		)
+
+	stock_entry.reload()
+	stock_entry.flags.ignore_permissions = True
+	stock_entry.flags.ignore_mandatory = True
+	stock_entry.validate_inventory_dimension_mandatory = skip_inventory_dimension_mandatory_validation
+	for index, child in enumerate(stock_entry.items):
+		expected = expected_dimensions[index]
+		actual = get_row_dimensions(child)
+		if expected != actual:
+			frappe.throw(
+				_(
+					"Stock Entry {0}, row {1}: Could not restore intended dimensions. Expected={2}, Actual={3}."
+				).format(
+					stock_entry.name,
+					child.idx,
+					frappe.as_json(expected),
+					frappe.as_json(actual),
+				)
+			)
 
 
 def validate_dimension_only_entry(doc):
@@ -469,13 +624,58 @@ def validate_dimension_only_entry(doc):
 			frappe.throw(_("Row {0}: Quantity must be greater than zero.").format(row.idx))
 
 		if not dimensions_changed(row):
-			frappe.throw(_("Row {0}: Source and target dimensions are identical.").format(row.idx))
+			frappe.throw(
+				_(
+					"Row {0}, Item {1}, Warehouse {2}: "
+					"Source and target dimensions are identical. "
+					"Source Project={3}, Source Bin={4}, "
+					"Target Project={5}, Target Bin={6}."
+				).format(
+					row.idx,
+					row.item_code,
+					row.s_warehouse,
+					clean_dimension(row.get(PROJECT_FIELD)) or "[empty]",
+					clean_dimension(row.get(BIN_FIELD)) or "[empty]",
+					clean_dimension(row.get(TO_PROJECT_FIELD)) or "[empty]",
+					clean_dimension(row.get(TO_BIN_FIELD)) or "[empty]",
+				)
+			)
 
 
 def dimensions_changed(row):
-	source = (row.get(PROJECT_FIELD), row.get(BIN_FIELD))
-	target = (row.get(TO_PROJECT_FIELD), row.get(TO_BIN_FIELD))
+	source = (clean_dimension(row.get(PROJECT_FIELD)), clean_dimension(row.get(BIN_FIELD)))
+	target = (clean_dimension(row.get(TO_PROJECT_FIELD)), clean_dimension(row.get(TO_BIN_FIELD)))
 	return source != target
+
+
+def remove_noop_document_rows(doc):
+	removed = []
+
+	for row in list(doc.items):
+		source = (
+			clean_dimension(row.get(PROJECT_FIELD)),
+			clean_dimension(row.get(BIN_FIELD)),
+		)
+		target = (
+			clean_dimension(row.get(TO_PROJECT_FIELD)),
+			clean_dimension(row.get(TO_BIN_FIELD)),
+		)
+
+		if source != target:
+			continue
+
+		removed.append(
+			{
+				"idx": row.idx,
+				"item_code": row.item_code,
+				"warehouse": row.s_warehouse,
+				"project": source[0],
+				"bin": source[1],
+			}
+		)
+		doc.remove(row)
+
+	return removed
 
 
 def prepare_correction_rows(doc):
