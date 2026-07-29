@@ -88,6 +88,10 @@ app_license = "mit"
 # before_install = "ace.install.before_install"
 # after_install = "ace.install.after_install"
 
+after_migrate = [
+	"ace.migration.after_migrate",
+]
+
 # Uninstallation
 # ------------
 
