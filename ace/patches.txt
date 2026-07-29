@@ -18,3 +18,4 @@ ace.patches.v16_0.submit_batch_dimension_stock_correction
 ace.patches.v16_0.backfill_wip_fg_dimensions
 ace.patches.v16_0.configure_pick_list_bin_allocation
 ace.patches.v16_0.reconcile_stock_dimensions_after_cloud_install #2026-07-28-v2
+ace.patches.v16_0.reconcile_stock_dimensions_v3
