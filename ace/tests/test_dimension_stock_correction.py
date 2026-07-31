@@ -2,7 +2,11 @@ from types import SimpleNamespace
 from unittest import TestCase
 from unittest.mock import patch
 
-from ace.stock.stock_entry import set_default_bin_location
+from ace.stock.stock_entry import (
+	get_parent_project,
+	set_default_bin_location,
+	set_project_dimensions_from_parent,
+)
 from ace.utils.dimension_stock_correction import (
 	BIN_FIELD,
 	PROJECT_FIELD,
@@ -19,6 +23,9 @@ from ace.utils.dimension_stock_correction import (
 class FakeRow(dict):
 	def __getattr__(self, key):
 		return self.get(key)
+
+	def __setattr__(self, key, value):
+		self[key] = value
 
 	def set(self, key, value):
 		self[key] = value
@@ -58,6 +65,41 @@ class FakeStockEntry:
 
 
 class TestDimensionStockCorrection(TestCase):
+	def test_parent_project_has_priority_over_pick_list_and_work_order(self):
+		doc = FakeRow(
+			project="PROJ-PARENT",
+			pick_list="STO-PICK-1",
+			work_order="MFG-WO-1",
+		)
+
+		with patch("ace.stock.stock_entry.frappe.db.get_value") as get_value:
+			project = get_parent_project(doc)
+
+		self.assertEqual(project, "PROJ-PARENT")
+		get_value.assert_not_called()
+
+	@patch("ace.stock.stock_entry.frappe.db.get_value")
+	def test_pick_list_project_is_fallback_before_work_order(self, get_value):
+		get_value.return_value = "PROJ-PICK"
+		doc = FakeRow(pick_list="STO-PICK-1", work_order="MFG-WO-1")
+
+		project = get_parent_project(doc)
+
+		self.assertEqual(project, "PROJ-PICK")
+		get_value.assert_called_once_with("Pick List", "STO-PICK-1", "custom_project")
+
+	@patch("ace.stock.stock_entry.get_parent_project", return_value="PROJ-PICK")
+	def test_pick_list_fallback_populates_parent_and_row_dimensions(self, _get_parent_project):
+		row = FakeRow(s_warehouse="Stores - ACE", t_warehouse="Work In Progress - ACE")
+		doc = FakeRow(project=None, items=[row])
+
+		set_project_dimensions_from_parent(doc)
+
+		self.assertEqual(doc.project, "PROJ-PICK")
+		self.assertEqual(row.project, "PROJ-PICK")
+		self.assertEqual(row.project_aa, "PROJ-PICK")
+		self.assertEqual(row.to_project_aa, "PROJ-PICK")
+
 	def test_validate_transfer_plan_keeps_dimension_changes_and_skips_noop(self):
 		plan = [
 			make_plan("PROJ-1", "BIN-1", "PROJ-2", "BIN-2"),

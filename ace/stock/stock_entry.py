@@ -117,6 +117,9 @@ def set_project_dimensions_from_parent(doc):
 	if not parent_project and not any(row.get(PROJECT_FIELD) for row in doc.get("items") or []):
 		return
 
+	if parent_project and not doc.get("project"):
+		doc.project = parent_project
+
 	for row in doc.get("items") or []:
 		source_project = row.get(PROJECT_FIELD) or parent_project
 		target_project = parent_project or source_project
@@ -134,6 +137,11 @@ def set_project_dimensions_from_parent(doc):
 def get_parent_project(doc):
 	if doc.get("project"):
 		return doc.project
+
+	if doc.get("pick_list"):
+		project = frappe.db.get_value("Pick List", doc.pick_list, "custom_project")
+		if project:
+			return project
 
 	if doc.get("work_order"):
 		return frappe.db.get_value("Work Order", doc.work_order, "project")
