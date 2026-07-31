@@ -2,6 +2,7 @@ from types import SimpleNamespace
 from unittest import TestCase
 from unittest.mock import patch
 
+from ace.hooks import doc_events
 from ace.stock.stock_entry import (
 	get_parent_project,
 	set_default_bin_location,
@@ -65,6 +66,13 @@ class FakeStockEntry:
 
 
 class TestDimensionStockCorrection(TestCase):
+	def test_stock_entry_dimensions_are_set_before_native_validation(self):
+		self.assertEqual(
+			doc_events["Stock Entry"]["before_validate"],
+			"ace.stock.stock_entry.set_default_bin_location",
+		)
+		self.assertNotIn("validate", doc_events["Stock Entry"])
+
 	def test_parent_project_has_priority_over_pick_list_and_work_order(self):
 		doc = FakeRow(
 			project="PROJ-PARENT",
